@@ -1,145 +1,169 @@
 # WifiShare
 
-Share Wi-Fi with **one Ethernet client**, using Windows WinNAT, DHCP and optional
-SMB/HTTP file sharing. All application code is in Program.cs.
+Share folders **by IP address** on the network you are already on, driven by a
+background Windows service.
 
-## Correct addresses
+Despite the name, Wi-Fi is not required: LAN mode
+works on any connected adapter (Ethernet, Wi-Fi, anything with an IPv4 address)
+and changes no IP, routing or DHCP settings. A second **subnet mode** keeps the
+original purpose available: a dedicated NAT + DHCP network for one cabled client.
 
-| Setting | Laptop Ethernet | Client Ethernet |
-|---|---|---|
-| IPv4 | 172.20.10.1 | **172.20.10.185** |
-| Mask | 255.255.255.0 | 255.255.255.0 |
-| Gateway | None; internet exits through Wi-Fi | 172.20.10.1 |
-| DNS | Existing Wi-Fi DNS | Upstream DNS selected at Start |
+- One self-contained executable, zero NuGet packages, .NET 10.
+- The service runs as LocalSystem and starts with Windows — sharing survives
+  reboots with nobody signed in.
+- After a one-time elevated `install`, **any signed-in user** controls sharing
+  from a normal terminal over a local named pipe.
 
-The .185 address belongs to the client. The laptop must have a different address.
-Startup allows editing both addresses within the same /24 and rejects overlapping
-upstream subnets. MAC spoofing is no longer part of startup.
+## Quick start
 
-The DHCP pool contains exactly the selected client address. Connect only the intended
-client to this cable. The selected DNS suffix defaults to mydomain.net; this does not
-create a domain or make private DNS servers reachable.
-
-## Run
-
-Requires Windows with working WinNAT (Get-NetNat / New-NetNat), Administrator rights,
-and .NET 10 to build. No NuGet packages. The app checks prerequisites and does not
-automatically install Windows features.
-
-In Administrator PowerShell:
-
-```powershell
-cd D:\KscProjects\WifiShare
-dotnet run -c Release
-```
-
-Choose **1 — Start**, confirm the physical adapters and the addresses above. DNS
-defaults come from Wi-Fi. Choose DHCP for an automatic client, or decline it if the
-client already has a static address. Keep the app open for DHCP and HTTP.
-
-Menu: **1** Start, **2** Stop/Restore, **3** Settings, **4** Status, **5** Exit.
-
-- --start runs setup prompts, then keeps the menu and background servers alive.
-- --stop restores the session saved beside this executable.
-- --setup-share applies the SMB login to an existing share without restarting networking.
-- --status runs read-only diagnostics without requiring elevation; some Windows queries
-  may still require Administrator privileges.
-- --help prints usage.
-
-Publish the standalone executable:
+Build and publish (or use a release build):
 
 ```powershell
 dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true -o publish
 ```
 
-Run publish/WifiShare.exe as Administrator. Do not run multiple copies.
-**Stop an active old build before upgrading**: Debug, Release and publish folders have
-separate saved session files.
+One time, from an **Administrator** terminal:
 
-## Client setup
+```powershell
+publish\WifiShare.exe install
+```
 
-Set the client's Ethernet IPv4 **and DNS to automatic**, then reconnect the cable or
-run `ipconfig /renew` on the client. Expect 172.20.10.185 with gateway 172.20.10.1.
-Look for DHCP OFFER and ACK in the laptop log.
+From then on, from **any** terminal, no elevation:
 
-For static configuration, use the client column above and the DNS printed by Start.
+```powershell
+WifiShare share D:\SharedWithClient     # share a folder on the current network(s)
+WifiShare status                        # state + the URLs clients use
+WifiShare stop                          # stop sharing, disable boot auto-start
+```
 
-- File Explorer address bar: `\\172.20.10.1\Shared`.
-- Browser: http://172.20.10.1:8080/ when HTTP is running.
+`WifiShare` with no arguments opens an interactive menu. `WifiShare help` lists
+every command. Clients connect with `\\<this-machine's-IP>\Shared` or, when HTTP
+is enabled, `http://<IP>:8080/` — `status` prints the exact addresses.
+
+## How it works
+
+| Piece | Detail |
+|---|---|
+| Service | `WifiShare`, LocalSystem, auto-start, crash-restart via SCM failure actions |
+| Control channel | Named pipe `WifiShare.Control.v1`, JSON-lines, local only |
+| Pipe permissions | SYSTEM + Administrators full control; **Interactive Users read/write** |
+| Boot auto-start | A successful `share` saves a profile; the service re-applies it at boot |
+| Password at rest | DPAPI, machine scope, in `C:\ProgramData\WifiShare\profile.json` |
+| State / logs | `C:\ProgramData\WifiShare` (state, profile, DHCP leases, `WifiShare.log`) |
+
+The pipe DACL is the security boundary: any process running as a signed-in user
+can reconfigure or stop sharing. That is a deliberate choice for personal
+machines — do not install this on a shared/multi-user server where local users
+are not trusted. Passwords sent over the pipe are plaintext but never leave the
+machine; avoid `--password` in scripts because shells keep command history.
+
+LAN mode and subnet mode are mutually exclusive; starting one refuses while the
+other is active. Every engine operation is serialized, so concurrent clients
+cannot interleave changes.
+
+## LAN mode (primary)
+
+`share [folder]` creates/uses a managed local SMB account, grants it read/write
+on the folder and share, opens scoped firewall rules (SMB 445, discovery, ping,
+HTTP) on the selected interfaces, and optionally serves the folder over HTTP.
+No adapter addressing, NAT, DHCP or forwarding is touched.
+
+- Re-running `share` with new options reconfigures in place (tear down, re-share).
+- `stop` removes the share, firewall rules and HTTP listener, and disables boot
+  auto-start. The folder and the local account are kept.
+- Defaults: share name `Shared`, user `admin`, password `123456`, HTTP port 8080.
+  Override with `--name/--user/--password/--port/--no-http/--interfaces A,B`.
+  Unspecified options fall back to the saved profile.
 
 ### Shared-folder login
 
-Default username: **admin**. Default password: **123456**.
-When Windows asks, use **LAPTOP-NAME\admin**, where LAPTOP-NAME is the server's
-computer name printed by the app. This selects the laptop account instead of an
-account on the client. You can also run this on the client and type the password:
+When Windows asks for credentials, use **MACHINE-NAME\admin** (the server's
+computer name) so the client selects the server's local account, not its own:
 
 ```cmd
-net use \\172.20.10.1\Shared /user:LAPTOP-NAME\admin *
+net use \\192.168.1.20\Shared /user:MACHINE-NAME\admin *
 ```
 
-Startup creates a standard local account, grants it read/write folder and share
-access, and removes the share's old Everyone grant. Administrators retain full
-share access. Existing unrelated accounts are never adopted or password-reset;
-choose another username in Settings if the default is already in use.
+Startup creates a standard local account, grants it folder + share access, and
+removes the share's old Everyone grant; Administrators keep full access.
+Existing unrelated accounts are never adopted or password-reset — pick another
+username if the default is taken. Windows password policy is respected. SMB is
+authenticated; the optional HTTP file browser is **not** — enable it only on
+trusted networks. If Windows cached a wrong login, disconnect the mapping first
+(`net use \\IP\Shared /delete`) and reconnect.
 
-Settings allows a different username/password. Passwords are not written to the
-recovery JSON or application log; the requested default is in source. Windows
-password policy is respected, so a rejected password needs to be changed in Settings.
-The account is retained when sharing stops and reused by later starts. Credential
-settings last for the current process; a new process uses the default password again.
+## Subnet mode (one cabled client)
 
-For an already-running share, use an Administrator terminal:
+`WifiShare subnet start` builds a dedicated network: WinNAT, a static address on
+the downlink, and a DHCP server that offers exactly one client address.
+`WifiShare subnet stop` restores the original adapter settings. The legacy
+interactive flow is still available via `WifiShare console` (admin, in-process).
 
-```powershell
-dotnet run -c Release -- --setup-share
+| Setting | This machine (downlink) | Client |
+|---|---|---|
+| IPv4 | 172.20.10.1 | **172.20.10.185** |
+| Mask | 255.255.255.0 | 255.255.255.0 |
+| Gateway | None; internet exits through the uplink | 172.20.10.1 |
+| DNS | Existing uplink DNS | Upstream DNS (inherited or `--dns`) |
+
+The .185 address belongs to the client; both addresses are editable within the
+same /24 at start (`--host-ip/--client-ip`), and overlapping upstream subnets
+are rejected. The DHCP pool contains exactly the client address — connect only
+the intended client to this cable. `--suffix` sets a DNS suffix (default
+`mydomain.net`); it does not create a domain or make private DNS reachable.
+
+Client setup: set Ethernet IPv4 **and DNS to automatic**, reconnect the cable or
+`ipconfig /renew`. Expect 172.20.10.185 / gateway 172.20.10.1; look for DHCP
+OFFER/ACK in the service log. Then `\\172.20.10.1\Shared` or
+`http://172.20.10.1:8080/`. `WifiShare leases` shows active leases.
+
+**Disable ICS / Mobile hotspot first.** Start refuses existing ICS, Windows NAT
+or UDP-67 conflicts before changing anything; it never deletes other
+applications' networks. Setup snapshots address/DNS/forwarding and rolls back
+on failure; a failed restore keeps the recovery file for retry. Old APIPA
+snapshots restore to DHCP, never back to a static link-local address.
+
+## CLI reference
+
+```
+WifiShare                      interactive menu
+WifiShare install              install + start the service (admin, one time)
+WifiShare uninstall            stop + remove the service (admin; settings kept)
+WifiShare share [folder]       LAN-mode share; --name/--user/--password/--port/
+                               --no-http/--interfaces A,B
+WifiShare stop                 stop all sharing, disable boot auto-start
+WifiShare status               service state + client access URLs
+WifiShare leases               DHCP leases (subnet mode)
+WifiShare subnet start [...]   --uplink/--downlink/--host-ip/--client-ip/--dns/
+                               --suffix/--no-dhcp/--lease-hours + share options
+WifiShare subnet stop          restore original network settings
+WifiShare adapters             read-only adapter table (no service needed)
+WifiShare console              legacy in-process menu (admin)
+WifiShare help                 full usage
 ```
 
-If Windows cached a different login, disconnect the existing share mapping first
-and reconnect with the laptop-qualified username. These credentials apply to SMB;
-the optional HTTP file browser remains unauthenticated.
-
-## Why sharing changed
-
-The previous flow assigned the client's .185 address to the laptop, overwrote the ICS
-LAN configuration, added an off-subnet gateway and ran another DHCP server. Its
-unicast-only listener could miss DHCP broadcasts, and its Private-only firewall rule
-did not cover an unidentified Public Ethernet network.
-
-This version uses [Windows configurable NAT](https://learn.microsoft.com/en-us/windows-server/virtualization/hyper-v/setup-nat-network)
-for the actual subnet and one DHCP server. The listener receives broadcasts, filters
-input by Ethernet interface index, and selects that interface for replies.
-The app's DHCP, file, discovery, ping and HTTP rules are scoped to Ethernet.
-
-**Disable ICS / Mobile hotspot first.** Startup refuses existing ICS, Windows NAT or
-DHCP port conflicts before changing addresses; it does not delete other applications'
-networks or change undocumented ICS registry settings. Corrected ICS COM declarations
-remain for diagnostics and legacy session cleanup.
-
-Startup saves address/DNS/forwarding settings before changes and rolls back failed setup.
-Failed restoration keeps the recovery file for retry. Old APIPA snapshots are restored
-to DHCP instead of being recreated as static addresses. Shared folders remain on disk.
-File-sharing service and folder-permission changes are not rolled back by Stop.
+`install` must run from the published `WifiShare.exe`, not `dotnet run` — the
+SCM needs a real binary path. To upgrade: `uninstall`, replace the exe,
+`install` again. Settings in `C:\ProgramData\WifiShare` survive upgrades.
 
 ## Troubleshooting
 
-Version 1.1.1 fixes `New-NetNat` rejecting the previous 42-character generated name
-with Windows error 122 (displayed as “One or more parameter values ... invalid”).
-Sessions now use short unique NAT names, verified against the Windows provider on
-the target laptop. Startup also identifies the exact failed command and error ID.
-
-1. Link down / cable unplugged: check the cable, client power and adapter.
-2. Client has 169.254.x.x: no DHCP lease. Check automatic IPv4/DNS, OFFER/ACK logs and
-   whether another DHCP server holds UDP 67. Leave the app open.
-3. Client has .185: try `ping 172.20.10.1` and the HTTP link. Check masks, duplicate
-   addresses and endpoint firewalls if both fail.
-4. Gateway works but internet fails: check NAT in Status, laptop Wi-Fi internet and
-   VPN/default routes. Try `ping 1.1.1.1` and a website; ICMP can be blocked separately.
-5. Addresses work but names fail: use `nslookup example.com` and check the chosen DNS.
-   The laptop does not run a DNS proxy in this mode.
-6. Only File Explorer's Network list is empty: discovery is separate from routing.
-   Use the direct share path and enable discovery on the client's trusted LAN.
-   “Unidentified network” alone does not prove connectivity is broken.
+1. **"Service is not reachable"**: it is not installed or not running. Check
+   `sc query WifiShare`; install from an elevated terminal, or start it with
+   `sc start WifiShare`. Details land in `C:\ProgramData\WifiShare\WifiShare.log`.
+2. **Share fails at boot**: the saved folder may be gone or no adapter is up yet.
+   The service logs the reason; fix and re-run `share`, or `stop` to disable
+   auto-start.
+3. **Client cannot open `\\IP\Shared`**: use the IP printed by `status`, check
+   the firewall rules exist (`Get-NetFirewallRule -Name WifiShare-*`), and try
+   the HTTP URL to separate SMB-auth problems from reachability problems.
+4. **Subnet client has 169.254.x.x**: no DHCP lease. Check automatic IPv4/DNS,
+   OFFER/ACK in the log, and whether another DHCP server holds UDP 67.
+5. **Subnet client has .185 but no internet**: `ping 172.20.10.1`, then
+   `ping 1.1.1.1`; check NAT is active (`Get-NetNat`), uplink internet and VPN
+   routes. Names failing separately: `nslookup example.com` and the chosen DNS.
+6. **`New-NetNat` error 122**: fixed in 1.1.1 — NAT names are short and unique;
+   upgrade if an old build produced a 42-character name.
 
 ## Verification
 
@@ -148,31 +172,21 @@ dotnet build -c Release
 dotnet run --project tests/WifiShare.Tests.csproj -c Release
 ```
 
-Tests cover addressing, subnet overlap, adapter selection, restoration decisions,
-interface filtering, malformed requests and real loopback UDP OFFER/ACK/NAK exchanges.
-They do not change OS networking. End-to-end forwarding and Ethernet broadcast delivery
-still require an elevated run and checks on the physical client.
+Tests cover addressing, subnet overlap, adapter selection, restoration
+decisions, interface filtering, malformed requests and real loopback UDP
+OFFER/ACK/NAK exchanges. They do not change OS networking. End-to-end
+forwarding still requires an elevated run and a physical client.
 
-After applying the default SMB login, this opt-in check validates the password and
-creates, reads and deletes one temporary file through the loopback SMB share using
-an independent logon session:
+Opt-in integration checks (see test source for what they touch):
 
 ```powershell
 dotnet run --project tests/WifiShare.Tests.csproj -c Release -- --smb-integration
-```
-
-An optional Windows integration check exercises the production NAT creation,
-active-subnet verification and cleanup. Run it only from an Administrator terminal:
-
-```powershell
 dotnet run --project tests/WifiShare.Tests.csproj -c Release -- --nat-integration
 ```
 
-This temporarily enables forwarding and creates its own NAT, then restores both.
-It refuses an existing NAT or ICS session and leaves IP/DNS/firewall settings alone.
-The standalone `diagnostics/Probe-Nat.ps1` can reproduce the old long-name failure;
-its `-ShortName` switch tests the short-name form. Both runs keep a recovery snapshot
-until cleanup succeeds.
+The SMB check validates the default login through a real loopback share logon;
+the NAT check (Administrator) creates and removes its own NAT and restores
+forwarding, refusing existing NAT/ICS sessions.
 
 ## License
 

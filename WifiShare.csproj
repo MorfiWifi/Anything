@@ -1,10 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    Thin build wrapper. ALL application code lives in Program.cs (single file).
+    Thin build wrapper. Code is split across Core/ (primitives), Engine/
+    (orchestration), Service/ (SCM host + control pipe), Ipc/ (protocol),
+    Cli/ (client) and Program.cs (bootstrap); one assembly / one executable.
     - dotnet run                       (from an elevated Windows terminal)
-    - dotnet publish -c Release -r win-x64 [self-contained single file, see README in Program.cs]
-    - Or, with only the .cs file: dotnet run Program.cs (.NET 10 file-based apps)
+    - dotnet publish -c Release -r win-x64 [self-contained single file, see README]
     EnableWindowsTargeting lets this Windows-targeted project also compile
     on non-Windows machines for syntax checking (it will refuse sharing at runtime).
   -->
@@ -16,15 +17,15 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <AssemblyName>WifiShare</AssemblyName>
     <RootNamespace>WifiShare</RootNamespace>
-    <!-- Base version for autoversioning. Local builds use this as-is (1.1.2).
+    <!-- Base version for autoversioning. Local builds use this as-is (1.2.0).
          CI appends the GitHub run number on the `release` branch:
            dotnet publish /p:Version=$(VersionPrefix).<run_number>
-         so every release build gets a unique version (e.g. 1.1.2.78) and the
+         so every release build gets a unique version (e.g. 1.2.0.78) and the
          GitHub Release is tagged v<that version>. Bump VersionPrefix here to
          start a new series. No NuGet versioning packages required. -->
-    <VersionPrefix>1.1.2</VersionPrefix>
+    <VersionPrefix>1.2.0</VersionPrefix>
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
-    <Description>Share laptop Wi-Fi over Ethernet with a dedicated client subnet, NAT, DHCP and file sharing.</Description>
+    <Description>Folder sharing by IP address as a background Windows service, with optional dedicated-subnet NAT/DHCP for a cabled client.</Description>
   </PropertyGroup>
 
   <ItemGroup>

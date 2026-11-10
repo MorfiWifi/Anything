@@ -132,6 +132,84 @@ try
     Check(server.GetLeases().Count == 1, "Valid saved lease survives restart");
 }
 finally { File.Delete(leaseFile); }
+
+// --- Service era: DPAPI, profile, pipe protocol, LAN validation, GUID fallback ---
+string secretText = "p@ss'with$dollar;and space";
+string protectedBlob = Secret.Protect(secretText);
+Check(Secret.Unprotect(protectedBlob) == secretText, "DPAPI machine-scope round-trip preserves punctuation");
+Check(protectedBlob != secretText && !protectedBlob.Contains(secretText), "DPAPI blob is not the plaintext");
+
+var lanCfg = new LanShareConfig
+{
+    Folder = @"C:\TestShare", ShareName = "TestShare", ShareUserName = "admin",
+    SharePassword = secretText, HttpPort = 9090, Http = false, Interfaces = new() { "Ethernet" },
+};
+var profile = ProfileStore.FromLanConfig(lanCfg, enabled: true);
+string profileJson = JsonSerializer.Serialize(profile);
+Check(!profileJson.Contains(secretText), "Saved profile never contains the plaintext SMB password");
+var cfg2 = JsonSerializer.Deserialize<ShareProfile>(profileJson)!.ToLanConfig();
+Check(cfg2.Folder == lanCfg.Folder && cfg2.ShareName == lanCfg.ShareName &&
+    cfg2.SharePassword == secretText && cfg2.HttpPort == 9090 && !cfg2.Http &&
+    cfg2.Interfaces.SequenceEqual(lanCfg.Interfaces), "Profile JSON round-trip preserves the full share intent");
+Check(new ShareProfile().GetPassword() == Defaults.SharePassword, "Profile without a saved password falls back to the default");
+
+Reject(() => LanShareEngine.ValidateConfig(new LanShareConfig { HttpPort = 0 }), "Reject LAN HTTP port 0");
+Reject(() => LanShareEngine.ValidateConfig(new LanShareConfig { HttpPort = 65536 }), "Reject LAN HTTP port 65536");
+Reject(() => LanShareEngine.ValidateConfig(new LanShareConfig { SharePassword = "" }), "Reject LAN config with empty SMB password");
+LanShareEngine.ValidateConfig(new LanShareConfig { HttpPort = 65535 });
+Check(true, "Accept LAN config with valid port and credentials");
+
+Check(Adapters.FindById(null) is null && Adapters.FindById("") is null, "Adapter lookup by empty GUID is null");
+Check(Adapters.CurrentName("{00000000-0000-0000-0000-000000000000}", "Saved Name") == "Saved Name",
+    "Unknown adapter GUID falls back to the saved name");
+Check(!Adapters.IsPresent(null, "WifiShare-Missing-" + Guid.NewGuid().ToString("N")), "Missing adapter is not present");
+Check(LanShareEngine.GetAccessUrls(new LanState
+    { Interfaces = new() { "WifiShare-Missing-" + Guid.NewGuid().ToString("N") } }).Count == 0,
+    "No access URLs for vanished interfaces");
+
+var request2 = JsonSerializer.Deserialize<PipeRequest>(JsonSerializer.Serialize(new PipeRequest { Cmd = "share", Lan = lanCfg }))!;
+Check(request2.Cmd == "share" && request2.Lan!.SharePassword == secretText && request2.Lan.Interfaces[0] == "Ethernet",
+    "Pipe request survives JSON round-trip");
+var response2 = JsonSerializer.Deserialize<PipeResponse>(JsonSerializer.Serialize(new PipeResponse
+    { Ok = true, Status = new ServiceStatus { LanActive = true, AccessUrls = new() { @"\\1.2.3.4\Shared" } } }))!;
+Check(response2.Ok && response2.Status!.LanActive && response2.Status.AccessUrls[0] == @"\\1.2.3.4\Shared",
+    "Pipe response survives JSON round-trip");
+
+// Live pipe round-trip only when the real service is absent: the pipe name is
+// fixed, so a running service would make the peer nondeterministic. The
+// commands exercised here are read-only or rejected before any engine call.
+if (PipeClient.Send(new PipeRequest { Cmd = "ping" }, 500) is null)
+{
+    var pipeServer = new ControlPipeServer();
+    pipeServer.Start();
+    try
+    {
+        Check(PipeClient.Send(new PipeRequest { Cmd = "ping" }, PipeClient.QueryTimeoutMs) is { Ok: true, Message: "pong" },
+            "Live control pipe: ping -> pong");
+        Check(PipeClient.Send(new PipeRequest { Cmd = "status" }, PipeClient.QueryTimeoutMs) is { Ok: true, Status: not null },
+            "Live control pipe: status answers");
+        Check(PipeClient.Send(new PipeRequest { Cmd = "no-such-command" }, PipeClient.QueryTimeoutMs) is { Ok: false },
+            "Live control pipe rejects unknown commands");
+        Check(PipeClient.Send(new PipeRequest { Cmd = "share" }, PipeClient.QueryTimeoutMs) is { Ok: false },
+            "Live control pipe rejects share without a config");
+    }
+    finally { pipeServer.Stop(); }
+}
+
+// Service logging mode: console disabled, file sink still written.
+string logFile = Path.Combine(Path.GetTempPath(), "WifiShare-Test-" + Guid.NewGuid().ToString("N") + ".log");
+string oldLogPath = Log.FilePath; bool oldConsole = Log.ConsoleEnabled;
+try
+{
+    Log.FilePath = logFile; Log.ConsoleEnabled = false;
+    Log.Info("service-mode log probe");
+    Check(File.ReadAllText(logFile).Contains("service-mode log probe"), "Service log mode writes file without a console");
+}
+finally
+{
+    Log.FilePath = oldLogPath; Log.ConsoleEnabled = oldConsole;
+    File.Delete(logFile);
+}
 Console.WriteLine($"{passed} checks passed. No adapter, NAT, firewall or sharing settings modified.");
 return 0;
 
