@@ -18,7 +18,7 @@ internal static class CliMain
         string verb = args[0].ToLowerInvariant();
         if (!Sys.IsWindows() && verb is not ("help" or "--help" or "-h" or "/?" or "adapters" or "console"))
         {
-            Log.Error("WifiShare manages Windows networking; this command is unavailable on this OS.");
+            Log.Error("Anything manages Windows networking; this command is unavailable on this OS.");
             return 2;
         }
         try
@@ -26,7 +26,7 @@ internal static class CliMain
             switch (verb)
             {
                 case "--service":
-                    return ScmHost.Run(ServiceInstaller.ServiceName, WifiShareService.Start, WifiShareService.Stop);
+                    return ScmHost.Run(ServiceInstaller.ServiceName, AnythingService.Start, AnythingService.Stop);
                 case "install": return ServiceInstaller.Install() ? 0 : 1;
                 case "uninstall": return ServiceInstaller.Uninstall() ? 0 : 1;
                 case "help": case "--help": case "-h": case "/?":
@@ -34,7 +34,7 @@ internal static class CliMain
                 case "adapters":
                     Adapters.PrintTable(Adapters.ListAll()); return 0;
                 case "console":
-                    return WifiShareApp.Run(args.Skip(1).ToArray());
+                    return AnythingApp.Run(args.Skip(1).ToArray());
                 case "share": return Share(args);
                 case "stop": return PrintResult(PipeClient.Send(new PipeRequest { Cmd = "stop" }, PipeClient.CommandTimeoutMs));
                 case "status": return Status();
@@ -52,7 +52,7 @@ internal static class CliMain
     // ---------------- option parsing ----------------
     private sealed class Options
     {
-        private static readonly HashSet<string> Flags = new(StringComparer.OrdinalIgnoreCase) { "no-http", "no-dhcp" };
+        private static readonly HashSet<string> Flags = new(StringComparer.OrdinalIgnoreCase) { "no-http", "no-dhcp", "no-uplink" };
         private readonly Dictionary<string, string?> _values = new(StringComparer.OrdinalIgnoreCase);
         public List<string> Positional { get; } = new();
 
@@ -125,7 +125,7 @@ internal static class CliMain
         var response = PipeClient.Send(new PipeRequest { Cmd = "status" }, PipeClient.QueryTimeoutMs);
         if (response is null) { ServiceNotRunning(); return 1; }
         if (!response.Ok || response.Status is not { } s) { Log.Error(response.Message); return 1; }
-        Console.WriteLine($"WifiShare service v{s.Version}");
+        Console.WriteLine($"Anything service v{s.Version}");
         Console.WriteLine($"  LAN sharing:     {(s.LanActive ? "ACTIVE" : "idle")}");
         Console.WriteLine($"  Subnet mode:     {(s.SubnetActive ? "ACTIVE" : "idle")}");
         Console.WriteLine($"  Boot auto-start: {(s.AutoStartEnabled ? "enabled" : "disabled")}");
@@ -168,7 +168,7 @@ internal static class CliMain
     // ---------------- subnet mode ----------------
     private static int Subnet(string[] args)
     {
-        if (args.Length < 2) throw new ArgumentException("Usage: WifiShare subnet start|stop [options]");
+        if (args.Length < 2) throw new ArgumentException("Usage: Anything subnet start|stop [options]");
         switch (args[1].ToLowerInvariant())
         {
             case "stop":
@@ -181,11 +181,21 @@ internal static class CliMain
     private static int SubnetStart(string[] args)
     {
         var opts = Options.Parse(args, 2);
-        opts.RejectUnknown("uplink", "downlink", "host-ip", "client-ip", "dns", "suffix",
+        opts.RejectUnknown("uplink", "downlink", "no-uplink", "host-ip", "client-ip", "dns", "suffix",
             "no-dhcp", "lease-hours", "folder", "name", "user", "password", "port", "no-http");
         var all = Adapters.ListAll();
-        string uplink = opts.Get("uplink") ?? Adapters.DetectWifi(all)?.Name
-            ?? throw new ArgumentException("No uplink detected; pass --uplink <adapter name>.");
+        string uplink;
+        if (opts.HasFlag("no-uplink"))
+        {
+            if (opts.Get("uplink") is not null)
+                throw new ArgumentException("--no-uplink and --uplink are mutually exclusive.");
+            uplink = ""; // isolated subnet: DHCP + files only, no NAT/forwarding
+        }
+        else
+        {
+            uplink = opts.Get("uplink") ?? Adapters.DetectWifi(all)?.Name
+                ?? throw new ArgumentException("No uplink detected; pass --uplink <adapter name>, or --no-uplink for an isolated subnet.");
+        }
         string downlink = opts.Get("downlink") ?? Adapters.DetectEthernet(all)?.Name
             ?? throw new ArgumentException("No Ethernet downlink detected; pass --downlink <adapter name>.");
         var cfg = new SubnetConfig
@@ -217,7 +227,7 @@ internal static class CliMain
         if (response?.Subnet is { Success: true } r)
         {
             ClientHelp.Print(r.HostIp, r.ShareName, r.HttpPort, r.HttpOn,
-                r.Dns1, r.Dns2, r.DhcpOn, r.ClientIp, r.ClientIp, r.DnsSuffix);
+                r.Dns1, r.Dns2, r.DhcpOn, r.ClientIp, r.ClientIp, r.DnsSuffix, isolated: !cfg.HasUplink);
             if (r.SmbOn) Sharing.PrintShareLogin(r.HostIp, r.ShareName, cfg.ShareUserName, cfg.SharePassword);
         }
         return code;
@@ -236,9 +246,9 @@ internal static class CliMain
 
     private static void ServiceNotRunning()
     {
-        Log.Error("The WifiShare service is not reachable (not installed or not running).");
-        Log.Info("One-time setup from an elevated terminal:  WifiShare install");
-        Log.Info("After that, any signed-in user can run:    WifiShare share <folder> | status | stop");
+        Log.Error("The Anything service is not reachable (not installed or not running).");
+        Log.Info("One-time setup from an elevated terminal:  Anything install");
+        Log.Info("After that, any signed-in user can run:    Anything share <folder> | status | stop");
     }
 
     // ---------------- no-args interactive menu ----------------
@@ -271,7 +281,7 @@ internal static class CliMain
                     case "3": Status(); Ui.Pause(); break;
                     case "4": ServiceInstaller.Install(); Ui.Pause(); break;
                     case "5": ServiceInstaller.Uninstall(); Ui.Pause(); break;
-                    case "6": WifiShareApp.Run(Array.Empty<string>()); break;
+                    case "6": AnythingApp.Run(Array.Empty<string>()); break;
                     case "7": return 0;
                     default: Log.Warn("Please type 1-7."); break;
                 }
@@ -300,36 +310,61 @@ internal static class CliMain
     // ---------------- help ----------------
     private static void PrintHelp()
     {
-        Console.WriteLine("WifiShare — folder sharing by IP address, as a background Windows service.");
+        Console.WriteLine("Anything — share any folder by IP address, as a background Windows service.");
         Console.WriteLine();
-        Console.WriteLine("Usage: WifiShare <command> [options]   (no command = interactive menu)");
+        Console.WriteLine("Usage: Anything <command> [options]   (no command = interactive menu)");
         Console.WriteLine();
-        Console.WriteLine("Service setup (Administrator, one time):");
-        Console.WriteLine("  install                 install + start the service (LocalSystem, auto-start at boot)");
-        Console.WriteLine("  uninstall               stop + remove the service (settings are kept)");
+        Console.WriteLine("SERVICE SETUP (Administrator, one time)");
+        Console.WriteLine("  install                  install + start the service (LocalSystem, auto-start at boot)");
+        Console.WriteLine("  uninstall                stop + remove the service (settings are kept)");
+        Console.WriteLine("    Anything install");
+        Console.WriteLine("    Anything uninstall");
         Console.WriteLine();
-        Console.WriteLine("Sharing (any signed-in user, through the service):");
-        Console.WriteLine("  share [folder]          share a folder on the current network(s); re-share = reconfigure");
-        Console.WriteLine("    --name NAME           SMB share name");
-        Console.WriteLine("    --user NAME           SMB username");
-        Console.WriteLine("    --password PASS       SMB password (visible in shell history; prefer the menu)");
-        Console.WriteLine("    --port N              HTTP port (default 8080)");
-        Console.WriteLine("    --no-http             SMB only, no HTTP file server");
-        Console.WriteLine("    --interfaces A,B      limit to these adapters (default: all connected physical)");
-        Console.WriteLine("  stop                    stop sharing, remove share/rules, disable boot auto-start");
-        Console.WriteLine("  status                  service state, shared folder and client access URLs");
-        Console.WriteLine("  leases                  DHCP leases (subnet mode)");
+        Console.WriteLine("SHARING (any signed-in user, through the service)");
+        Console.WriteLine("  share [folder]           share a folder on the current network(s); re-share = reconfigure");
+        Console.WriteLine("      --name NAME          SMB share name (default: Shared)");
+        Console.WriteLine("      --user NAME          SMB username (default: admin)");
+        Console.WriteLine("      --password PASS      SMB password (visible in shell history; prefer the menu)");
+        Console.WriteLine("      --port N             HTTP port (default: 8080)");
+        Console.WriteLine("      --no-http            SMB only, no HTTP file server");
+        Console.WriteLine("      --interfaces A,B     limit to these adapters (default: all connected physical)");
+        Console.WriteLine("    Anything share D:\\Data");
+        Console.WriteLine("    Anything share D:\\Data --name Media --user guest --password \"s3cret\" --port 9000");
+        Console.WriteLine("    Anything share --no-http --interfaces \"Ethernet\"");
+        Console.WriteLine("    Anything share                          (re-apply the saved profile / defaults)");
+        Console.WriteLine("  stop                     stop sharing, remove share/rules, disable boot auto-start");
+        Console.WriteLine("    Anything stop");
+        Console.WriteLine("  status                   service state, shared folder and client access URLs");
+        Console.WriteLine("    Anything status");
+        Console.WriteLine("  leases                   DHCP leases (subnet mode)");
+        Console.WriteLine("    Anything leases");
         Console.WriteLine();
-        Console.WriteLine("Subnet mode (dedicated NAT + DHCP network for one cabled client):");
-        Console.WriteLine("  subnet start [options]  --uplink/--downlink NAME, --host-ip/--client-ip IP,");
-        Console.WriteLine("                          --dns IP[,IP], --suffix NAME|none, --no-dhcp, --lease-hours N,");
-        Console.WriteLine("                          --folder PATH, --name/--user/--password, --port N, --no-http");
-        Console.WriteLine("  subnet stop             stop subnet mode and restore original network settings");
+        Console.WriteLine("SUBNET MODE (dedicated network for one cabled client)");
+        Console.WriteLine("  subnet start [options]");
+        Console.WriteLine("      --uplink NAME        internet adapter (default: detected Wi-Fi)");
+        Console.WriteLine("      --no-uplink          isolated subnet: DHCP + files only, no NAT/internet");
+        Console.WriteLine("      --downlink NAME      client adapter (default: detected Ethernet)");
+        Console.WriteLine("      --host-ip IP         this machine's cable address (default: 172.20.10.1)");
+        Console.WriteLine("      --client-ip IP       DHCP offer / client address (default: 172.20.10.185)");
+        Console.WriteLine("      --dns IP[,IP]        client DNS servers (default: uplink DNS)");
+        Console.WriteLine("      --suffix NAME|none   DNS suffix (default: mydomain.net; none = empty)");
+        Console.WriteLine("      --no-dhcp            client configures a static IP instead");
+        Console.WriteLine("      --lease-hours N      DHCP lease length, 1-720 (default: 24)");
+        Console.WriteLine("      --folder PATH        folder to share (default: D:\\SharedWithClient)");
+        Console.WriteLine("      --name/--user/--password, --port N, --no-http   share options (as above)");
+        Console.WriteLine("    Anything subnet start");
+        Console.WriteLine("    Anything subnet start --uplink \"Wi-Fi\" --downlink \"Ethernet\" --dns 1.1.1.1,8.8.8.8");
+        Console.WriteLine("    Anything subnet start --no-uplink --host-ip 172.20.10.1 --client-ip 172.20.10.185 --suffix mydomain.net --dns 172.16.61.20,172.16.61.10");
+        Console.WriteLine("    Anything subnet start --no-dhcp --folder D:\\Drop --no-http");
+        Console.WriteLine("  subnet stop              stop subnet mode and restore original network settings");
+        Console.WriteLine("    Anything subnet stop");
         Console.WriteLine();
-        Console.WriteLine("Other:");
-        Console.WriteLine("  adapters                list local adapters (read-only, no service needed)");
-        Console.WriteLine("  console                 legacy interactive menu (engines run in this process; admin)");
-        Console.WriteLine("  help                    this text");
+        Console.WriteLine("OTHER");
+        Console.WriteLine("  adapters                 list local adapters (read-only, no service needed)");
+        Console.WriteLine("    Anything adapters");
+        Console.WriteLine("  console                  legacy interactive menu (engines run in this process; admin)");
+        Console.WriteLine("    Anything console --start | --stop | --status | --setup-share");
+        Console.WriteLine("  help                     this text");
         Console.WriteLine();
         Console.WriteLine($"Settings and logs: {AppData.Dir}");
     }

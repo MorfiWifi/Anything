@@ -24,13 +24,14 @@ internal static class Ui
     {
         if (!Console.IsOutputRedirected) Console.Clear();
         Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine(@" __        ___  __ _   ___ _                    ");
-        Console.WriteLine(@" \ \      / (_)/ _(_) / __| |__   __ _ _ __ ___  ");
-        Console.WriteLine(@"  \ \ /\ / /| | |_| | \__ \ '_ \ / _` | '__/ _ \ ");
-        Console.WriteLine(@"   \ V  V / | |  _| | |___| | | | (_| | | |  __/ ");
-        Console.WriteLine(@"    \_/\_/  |_|_| |_| |___/|_| |_|\__,_|_|  \___| ");
+        Console.WriteLine(@"    _                _   _     _                 ");
+        Console.WriteLine(@"   / \   _ __  _   _| |_| |__ (_)_ __   __ _    ");
+        Console.WriteLine(@"  / _ \ | '_ \| | | | __| '_ \| | '_ \ / _` |   ");
+        Console.WriteLine(@" / ___ \| | | | |_| | |_| | | | | | | | (_| |   ");
+        Console.WriteLine(@"/_/   \_\_| |_|\__, |\__|_| |_|_|_| |_|\__, |   ");
+        Console.WriteLine(@"               |___/                   |___/    ");
         Console.ResetColor();
-        Console.WriteLine("  Folder sharing by IP address  |  Background service + optional client subnet");
+        Console.WriteLine("  Share any folder by IP address  |  Background service + optional client subnet");
         Console.WriteLine($"  Log file: {Log.FilePath}");
         Console.WriteLine(new string('=', 70));
     }

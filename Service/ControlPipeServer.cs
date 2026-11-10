@@ -17,7 +17,7 @@ using System.Threading.Tasks;
 // ============================================================================
 internal sealed class ControlPipeServer
 {
-    // Also held by WifiShareService.Stop so shutdown cannot race a client command.
+    // Also held by AnythingService.Stop so shutdown cannot race a client command.
     internal static readonly object EngineGate = new();
     private CancellationTokenSource? _cts;
     private Task? _loop;
@@ -165,6 +165,15 @@ internal sealed class ControlPipeServer
         }
     }
 
+    private static string DescribeSubnet(ShareState s)
+    {
+        string path = s.PublicAdapterName.Length > 0
+            ? $"{s.PublicAdapterName} -> {s.PrivateAdapterName}"
+            : $"{s.PrivateAdapterName} (isolated, no uplink)";
+        string nat = s.NatName ?? (s.IcsEnabledByUs ? "legacy ICS" : "none");
+        return $"{path}, host {s.HostIp}, NAT {nat}";
+    }
+
     private static ServiceStatus BuildStatus()
     {
         var profile = ProfileStore.Load();
@@ -177,9 +186,7 @@ internal sealed class ControlPipeServer
             AutoStartEnabled = profile?.Enabled ?? false,
             Lan = lanState,
             AccessUrls = lanState is not null ? LanShareEngine.GetAccessUrls(lanState) : new List<string>(),
-            SubnetSummary = subnetState is not null
-                ? $"{subnetState.PublicAdapterName} -> {subnetState.PrivateAdapterName}, host {subnetState.HostIp}, NAT {subnetState.NatName ?? "legacy ICS"}"
-                : null,
+            SubnetSummary = subnetState is not null ? DescribeSubnet(subnetState) : null,
             LogPath = Log.FilePath,
             Version = typeof(ControlPipeServer).Assembly.GetName().Version?.ToString() ?? "",
         };

@@ -16,10 +16,10 @@ using System.Threading.Tasks;
 using Microsoft.Win32;
 
 // ============================================================================
-// WifiShareApp — interactive menu + CLI flags. Prompts live here; all network
+// AnythingApp — interactive menu + CLI flags. Prompts live here; all network
 // orchestration lives in SharingEngine so the Windows service can reuse it.
 // ============================================================================
-internal static class WifiShareApp
+internal static class AnythingApp
 {
     public static int Run(string[] args)
     {
@@ -115,15 +115,15 @@ internal static class WifiShareApp
 
     private static void PrintHelp()
     {
-        Console.WriteLine("WifiShare — share laptop Wi-Fi over Ethernet (Windows, admin required).");
+        Console.WriteLine("Anything — share laptop Wi-Fi over Ethernet (Windows, admin required).");
         Console.WriteLine();
         Console.WriteLine("Usage:");
-        Console.WriteLine("  WifiShare                 interactive menu");
-        Console.WriteLine("  WifiShare --start         configure sharing, then keep the menu/services running");
-        Console.WriteLine("  WifiShare --stop          stop sharing and restore original settings");
-        Console.WriteLine("  WifiShare --setup-share   create/update SMB login without restarting networking");
-        Console.WriteLine("  WifiShare --status        show adapters, IPs and sharing state");
-        Console.WriteLine("  WifiShare --help          this text");
+        Console.WriteLine("  Anything                 interactive menu");
+        Console.WriteLine("  Anything --start         configure sharing, then keep the menu/services running");
+        Console.WriteLine("  Anything --stop          stop sharing and restore original settings");
+        Console.WriteLine("  Anything --setup-share   create/update SMB login without restarting networking");
+        Console.WriteLine("  Anything --status        show adapters, IPs and sharing state");
+        Console.WriteLine("  Anything --help          this text");
     }
 
     // ---------------- interactive menu ----------------

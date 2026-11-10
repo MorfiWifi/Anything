@@ -81,7 +81,7 @@ internal static class ScmHost
         {
             int error = Marshal.GetLastWin32Error();
             if (error == ErrorFailedServiceControllerConnect)
-                Log.Error("--service must be launched by the Windows Service Control Manager, not from a terminal. Run 'WifiShare install' first.");
+                Log.Error("--service must be launched by the Windows Service Control Manager, not from a terminal. Run 'Anything install' first.");
             else
                 Log.Error($"StartServiceCtrlDispatcher failed (Win32 {error}).");
             return 1;

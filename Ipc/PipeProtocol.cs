@@ -4,7 +4,7 @@ using System.Collections.Generic;
 // line, then disconnect. Kept trivial on purpose — no framing beyond newline.
 internal static class PipeProtocol
 {
-    public const string PipeName = "WifiShare.Control.v1";
+    public const string PipeName = "Anything.Control.v1";
 }
 
 internal sealed class PipeRequest

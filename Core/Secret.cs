@@ -34,7 +34,7 @@ internal static class Secret
         try
         {
             Marshal.Copy(bytes, 0, input.pbData, bytes.Length);
-            if (!CryptProtectData(ref input, "WifiShare", IntPtr.Zero, IntPtr.Zero, IntPtr.Zero,
+            if (!CryptProtectData(ref input, "Anything", IntPtr.Zero, IntPtr.Zero, IntPtr.Zero,
                     CryptProtectLocalMachine, out DataBlob output))
                 throw new InvalidOperationException("CryptProtectData failed (Win32 " + Marshal.GetLastWin32Error() + ").");
             try

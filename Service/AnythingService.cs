@@ -3,12 +3,12 @@ using System.Threading;
 using System.Threading.Tasks;
 
 // ============================================================================
-// WifiShareService — service lifetime. Start brings up the control pipe and
+// AnythingService — service lifetime. Start brings up the control pipe and
 // re-applies the saved profile (boot auto-start); Stop tears sharing down so
 // the machine is left clean. The profile stays Enabled across service stops,
 // so the next boot shares again; the pipe 'stop' command disables it.
 // ============================================================================
-internal static class WifiShareService
+internal static class AnythingService
 {
     private static ControlPipeServer? _pipe;
     private static Task? _autoStart;
@@ -19,7 +19,7 @@ internal static class WifiShareService
         AppData.EnsureDir();
         Log.ConsoleEnabled = false; // session 0 has no console
         Log.FilePath = AppData.LogPath;
-        Log.Info($"WifiShare service starting (PID {Environment.ProcessId}).");
+        Log.Info($"Anything service starting (PID {Environment.ProcessId}).");
 
         _lifetime = new CancellationTokenSource();
         _pipe = new ControlPipeServer();
@@ -41,12 +41,12 @@ internal static class WifiShareService
                 catch (Exception ex) { Log.Error("Boot auto-start failed: " + ex.Message); }
             });
         }
-        Log.Ok("WifiShare service running.");
+        Log.Ok("Anything service running.");
     }
 
     public static void Stop()
     {
-        Log.Info("WifiShare service stopping.");
+        Log.Info("Anything service stopping.");
         _lifetime?.Cancel();
         _pipe?.Stop();
         _pipe = null;
@@ -63,6 +63,6 @@ internal static class WifiShareService
         }
         _lifetime?.Dispose();
         _lifetime = null;
-        Log.Ok("WifiShare service stopped.");
+        Log.Ok("Anything service stopped.");
     }
 }

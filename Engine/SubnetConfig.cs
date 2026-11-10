@@ -6,7 +6,9 @@ using System.Collections.Generic;
 // The engine never reads the console.
 internal sealed class SubnetConfig
 {
+    // Empty = isolated subnet: no uplink, no NAT/forwarding, just DHCP + files.
     public string UplinkAdapter { get; set; } = "";
+    public bool HasUplink => !string.IsNullOrWhiteSpace(UplinkAdapter);
     public string DownlinkAdapter { get; set; } = "";
     public string HostIp { get; set; } = Defaults.HostIp;
     public string ClientIp { get; set; } = Defaults.ClientIp;

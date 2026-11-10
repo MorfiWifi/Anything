@@ -12,7 +12,7 @@ $snapshotPath = Join-Path $PSScriptRoot 'Probe-Nat-state.json'
 function Write-Probe([string]$Message) {
     ('[{0:o}] {1}' -f (Get-Date), $Message) | Add-Content -LiteralPath $logPath
 }
-$probeName = 'WifiShare-' + [guid]::NewGuid().ToString('N')
+$probeName = 'Anything-' + [guid]::NewGuid().ToString('N')
 if ($ShortName) { $probeName = 'WS-' + [guid]::NewGuid().ToString('N').Substring(0,8) }
 $original = @()
 $stage = 'Preflight'

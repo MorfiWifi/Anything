@@ -5,6 +5,8 @@ publish/
 
 # Runtime artifacts (machine-local, never commit)
 *.log
+anything-state.json
+anything-state.json.tmp
 wifishare-state.json
 wifishare-state.json.tmp
 dhcp-leases.json

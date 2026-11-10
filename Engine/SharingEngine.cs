@@ -51,17 +51,22 @@ internal static class SharingEngine
         ShareState? state = null;
         try
         {
-            Log.Step("Step 1/5 — Validate the internet and client adapters");
+            Log.Step(cfg.HasUplink ? "Step 1/5 — Validate the internet and client adapters"
+                                   : "Step 1/5 — Validate the client adapter (isolated subnet, no uplink)");
             var all = Adapters.ListAll();
-            var uplink = all.FirstOrDefault(a => a.Name.Equals(cfg.UplinkAdapter, StringComparison.OrdinalIgnoreCase))
-                ?? throw new ArgumentException($"Internet adapter '{cfg.UplinkAdapter}' not found.");
+            AdapterSnapshot? uplink = null;
+            if (cfg.HasUplink)
+            {
+                uplink = all.FirstOrDefault(a => a.Name.Equals(cfg.UplinkAdapter, StringComparison.OrdinalIgnoreCase))
+                    ?? throw new ArgumentException($"Internet adapter '{cfg.UplinkAdapter}' not found.");
+            }
             var downlink = all.FirstOrDefault(a => a.Name.Equals(cfg.DownlinkAdapter, StringComparison.OrdinalIgnoreCase))
                 ?? throw new ArgumentException($"Client adapter '{cfg.DownlinkAdapter}' not found.");
-            if (uplink.Id == downlink.Id || uplink.Type != NetworkInterfaceType.Wireless80211 ||
-                downlink.Type != NetworkInterfaceType.Ethernet)
+            if (downlink.Type != NetworkInterfaceType.Ethernet ||
+                (uplink is not null && (uplink.Id == downlink.Id || uplink.Type != NetworkInterfaceType.Wireless80211)))
                 throw new ArgumentException("Select distinct Wi-Fi and Ethernet adapters.");
-            if (uplink.Status != OperationalStatus.Up || downlink.Status != OperationalStatus.Up)
-                throw new InvalidOperationException("Both adapters must be connected. Check that the client is powered on and the Ethernet cable is plugged in.");
+            if (downlink.Status != OperationalStatus.Up || uplink is { Status: not OperationalStatus.Up })
+                throw new InvalidOperationException("The adapters must be connected. Check that the client is powered on and the Ethernet cable is plugged in.");
             // A just-stopped session can briefly show the old lease plus a new
             // address; wait for the stack to settle before rejecting the adapter.
             if (downlink.IPv4.Count(ip => !ip.StartsWith("169.254.")) > 1)
@@ -73,7 +78,7 @@ internal static class SharingEngine
             var overlap = all.FirstOrDefault(a => a.Id != downlink.Id && plan.Overlaps(a));
             if (overlap is not null)
                 throw new InvalidOperationException($"The LAN subnet overlaps '{overlap.Name}'. Use a different subnet or disconnect the conflicting network.");
-            var dnsStrings = cfg.Dns.Count > 0 ? cfg.Dns : new List<string> { uplink.Dns.FirstOrDefault() ?? Defaults.DnsPrimary };
+            var dnsStrings = ResolveDnsServers(cfg, uplink);
             var dnsServers = dnsStrings.Select(IPAddress.Parse).ToList();
             if (dnsServers.Any(d => d.AddressFamily != AddressFamily.InterNetwork ||
                 IPAddress.IsLoopback(d) || d.Equals(IPAddress.Any) || d.ToString() == cfg.HostIp))
@@ -92,7 +97,7 @@ internal static class SharingEngine
             int originalIpIndex = downlink.IPv4.FindIndex(ip => !ip.StartsWith("169.254."));
             state = new ShareState
             {
-                PublicAdapterName = uplink.Name, PublicAdapterId = uplink.Id,
+                PublicAdapterName = uplink?.Name ?? "", PublicAdapterId = uplink?.Id,
                 PrivateAdapterName = downlink.Name, PrivateAdapterId = downlink.Id,
                 HadStaticIp = Adapters.ShouldRestoreStatic(downlink),
                 OrigIp = originalIpIndex >= 0 ? downlink.IPv4[originalIpIndex] : null,
@@ -100,13 +105,15 @@ internal static class SharingEngine
                 OrigGateway = downlink.Gateways.FirstOrDefault(), OrigDns = new List<string>(downlink.Dns),
                 OrigDnsAutomatic = IpConfig.IsDnsAutomatic(downlink.Id),
                 OrigSuffix = IpConfig.GetConnectionSuffix(downlink.Id),
-                OrigPublicForwarding = LanNat.GetForwarding(uplink.Name),
-                OrigPrivateForwarding = LanNat.GetForwarding(downlink.Name),
+                // Forwarding is only touched when a NAT is created; isolated
+                // sessions leave it alone, so there is nothing to snapshot.
+                OrigPublicForwarding = uplink is not null && LanNat.GetForwarding(uplink.Name),
+                OrigPrivateForwarding = cfg.HasUplink && LanNat.GetForwarding(downlink.Name),
                 SharePath = cfg.SharePath, ShareName = cfg.ShareName, ShareCreatedByUs = false,
                 ShareUserName = cfg.ShareUserName,
                 DnsSuffix = cfg.DnsSuffix, HttpPort = cfg.HttpPort,
                 HostIp = cfg.HostIp, HostMask = LanPlan.Mask,
-                NatName = LanNat.CreateName(),
+                NatName = cfg.HasUplink ? LanNat.CreateName() : null,
                 StartedUtc = DateTimeOffset.UtcNow,
             };
             StateStore.Save(state);
@@ -128,9 +135,13 @@ internal static class SharingEngine
             if (!addressReady) throw new InvalidOperationException("The laptop's LAN address did not become ready. Check for a duplicate IP on the cable.");
             if (Adapters.WaitFor(downlink.Id, a => a.Gateways.Count == 0) is null)
                 throw new InvalidOperationException("A stale default gateway remains on the client adapter. It must have no default gateway.");
-            LanNat.Create(state, plan);
+            if (cfg.HasUplink)
+            {
+                LanNat.Create(state, plan);
+                Log.Ok($"NAT active for {plan.Prefix}; laptop gateway {cfg.HostIp}; client {cfg.ClientIp}.");
+            }
+            else Log.Ok($"Isolated subnet {plan.Prefix} ready (no uplink, no NAT); laptop {cfg.HostIp}; client {cfg.ClientIp}.");
             IpConfig.SetPrivateProfile(downlink.Name);
-            Log.Ok($"NAT active for {plan.Prefix}; laptop gateway {cfg.HostIp}; client {cfg.ClientIp}.");
 
             Log.Step("Step 4/5 — Client address assignment");
             if (cfg.Dhcp)
@@ -182,6 +193,11 @@ internal static class SharingEngine
             return result;
         }
     }
+
+    // Explicit DNS wins; otherwise inherit the uplink's; an isolated subnet
+    // has nothing to inherit, so it falls back to the configured default.
+    internal static List<string> ResolveDnsServers(SubnetConfig cfg, AdapterSnapshot? uplink) =>
+        cfg.Dns.Count > 0 ? cfg.Dns : new List<string> { uplink?.Dns.FirstOrDefault() ?? Defaults.DnsPrimary };
 
     // Stop / restore. Every step is independent and tolerant of objects that
     // are already gone; the recovery file is kept until everything succeeds.

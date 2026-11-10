@@ -31,7 +31,7 @@ Reject(() => Sharing.ValidateShareCredentials("PC\\admin", "123456"), "Reject do
 Reject(() => Sharing.ValidateShareCredentials("admin", ""), "Reject empty SMB password");
 Reject(() => Sharing.ValidateShareCredentials("admin' ; exit", "123456"), "Reject invalid local-account characters");
 var unusualPassword = "word'with$dollar;and space";
-var script = Sharing.BuildShareScript(Path.Combine(Path.GetTempPath(), "WifiShare 'test'"), "Shared", "admin", unusualPassword);
+var script = Sharing.BuildShareScript(Path.Combine(Path.GetTempPath(), "Anything 'test'"), "Shared", "admin", unusualPassword);
 Check(script.Contains(Sys.PwshQuote(unusualPassword)), "Quote password as PowerShell literal without expanding punctuation");
 Check(!JsonSerializer.Serialize(new ShareState()).Contains("Password", StringComparison.OrdinalIgnoreCase),
     "Recovery state contains no SMB password");
@@ -97,7 +97,7 @@ portProbe.Close();
 var scope = new DhcpScope(IPAddress.Loopback, IPAddress.Parse("255.0.0.0"), IPAddress.Loopback,
     new() { IPAddress.Parse("10.10.3.1") }, "mydomain.net",
     IPAddress.Parse("127.0.0.185"), IPAddress.Parse("127.0.0.185"), 3600);
-string leaseFile = Path.Combine(Path.GetTempPath(), "WifiShare-Test-" + Guid.NewGuid().ToString("N") + ".json");
+string leaseFile = Path.Combine(Path.GetTempPath(), "Anything-Test-" + Guid.NewGuid().ToString("N") + ".json");
 File.WriteAllText(leaseFile, JsonSerializer.Serialize(new[] {
     new DhcpLeaseRecord { Mac = "STALE", Ip = "172.20.10.185", ExpiryUtc = DateTime.UtcNow.AddDays(1) }
 }));
@@ -162,9 +162,9 @@ Check(true, "Accept LAN config with valid port and credentials");
 Check(Adapters.FindById(null) is null && Adapters.FindById("") is null, "Adapter lookup by empty GUID is null");
 Check(Adapters.CurrentName("{00000000-0000-0000-0000-000000000000}", "Saved Name") == "Saved Name",
     "Unknown adapter GUID falls back to the saved name");
-Check(!Adapters.IsPresent(null, "WifiShare-Missing-" + Guid.NewGuid().ToString("N")), "Missing adapter is not present");
+Check(!Adapters.IsPresent(null, "Anything-Missing-" + Guid.NewGuid().ToString("N")), "Missing adapter is not present");
 Check(LanShareEngine.GetAccessUrls(new LanState
-    { Interfaces = new() { "WifiShare-Missing-" + Guid.NewGuid().ToString("N") } }).Count == 0,
+    { Interfaces = new() { "Anything-Missing-" + Guid.NewGuid().ToString("N") } }).Count == 0,
     "No access URLs for vanished interfaces");
 
 var request2 = JsonSerializer.Deserialize<PipeRequest>(JsonSerializer.Serialize(new PipeRequest { Cmd = "share", Lan = lanCfg }))!;
@@ -197,7 +197,7 @@ if (PipeClient.Send(new PipeRequest { Cmd = "ping" }, 500) is null)
 }
 
 // Service logging mode: console disabled, file sink still written.
-string logFile = Path.Combine(Path.GetTempPath(), "WifiShare-Test-" + Guid.NewGuid().ToString("N") + ".log");
+string logFile = Path.Combine(Path.GetTempPath(), "Anything-Test-" + Guid.NewGuid().ToString("N") + ".log");
 string oldLogPath = Log.FilePath; bool oldConsole = Log.ConsoleEnabled;
 try
 {
@@ -210,6 +210,18 @@ finally
     Log.FilePath = oldLogPath; Log.ConsoleEnabled = oldConsole;
     File.Delete(logFile);
 }
+
+// --- Isolated subnet (no uplink): config contract and DNS fallback chain ---
+Check(!new SubnetConfig().HasUplink && !new SubnetConfig { UplinkAdapter = "  " }.HasUplink,
+    "Empty uplink means isolated subnet");
+Check(new SubnetConfig { UplinkAdapter = "Wi-Fi" }.HasUplink, "Named uplink enables routing mode");
+var upAdapter = Adapter("wifi", "Wi-Fi", NetworkInterfaceType.Wireless80211, "10.10.3.63", "255.255.255.0");
+Check(SharingEngine.ResolveDnsServers(new SubnetConfig { Dns = { "1.1.1.1" } }, upAdapter).SequenceEqual(new[] { "1.1.1.1" }),
+    "Explicit DNS wins over uplink inheritance");
+Check(SharingEngine.ResolveDnsServers(new SubnetConfig(), upAdapter).SequenceEqual(new[] { "10.10.3.1" }),
+    "DNS inherits from the uplink when unspecified");
+Check(SharingEngine.ResolveDnsServers(new SubnetConfig(), null).SequenceEqual(new[] { Defaults.DnsPrimary }),
+    "Isolated subnet falls back to the default DNS");
 Console.WriteLine($"{passed} checks passed. No adapter, NAT, firewall or sharing settings modified.");
 return 0;
 
@@ -273,7 +285,7 @@ static int RunSmbIntegration()
         {
             WindowsIdentity.RunImpersonated(token, () =>
             {
-                string file = @"\\127.0.0.1\" + Defaults.ShareName + @"\.wifishare-auth-test-" + Guid.NewGuid().ToString("N") + ".tmp";
+                string file = @"\\127.0.0.1\" + Defaults.ShareName + @"\.anything-auth-test-" + Guid.NewGuid().ToString("N") + ".tmp";
                 bool created = false;
                 try
                 {

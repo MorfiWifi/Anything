@@ -61,11 +61,11 @@ internal static class Sharing
             if ($existing -and [IO.Path]::GetFullPath($existing.Path).TrimEnd('\') -ne $folder.TrimEnd('\')) {
                 throw 'The share name already points to a different folder. Choose a different share name.'
             }
-            $registryPath = 'HKLM:\SOFTWARE\WifiShare\ShareAccounts'
+            $registryPath = 'HKLM:\SOFTWARE\Anything\ShareAccounts'
             $knownSid = Get-ItemPropertyValue -LiteralPath $registryPath -Name $userName -ErrorAction SilentlyContinue
             $user = Get-LocalUser -Name $userName -ErrorAction SilentlyContinue
             if ($user -and $user.SID.Value -ne $knownSid) {
-                throw "Local account '$userName' already exists and is not managed by WifiShare. Choose another share username in Settings."
+                throw "Local account '$userName' already exists and is not managed by Anything. Choose another share username in Settings."
             }
             $secret = ConvertTo-SecureString {{Sys.PwshQuote(password)}} -AsPlainText -Force
             try {
@@ -75,7 +75,7 @@ internal static class Sharing
                     Set-LocalUser -SID $user.SID -Password $secret -PasswordNeverExpires $true
                     Enable-LocalUser -SID $user.SID
                 } else {
-                    $user = New-LocalUser -Name $userName -Password $secret -PasswordNeverExpires -AccountNeverExpires -Description 'WifiShare SMB access account'
+                    $user = New-LocalUser -Name $userName -Password $secret -PasswordNeverExpires -AccountNeverExpires -Description 'Anything SMB access account'
                     try {
                         New-Item -Path $registryPath -Force | Out-Null
                         New-ItemProperty -LiteralPath $registryPath -Name $userName -Value $user.SID.Value -PropertyType String -Force | Out-Null
@@ -146,15 +146,15 @@ internal static class Sharing
     // -InterfaceAlias accepts an array, so one rule set can cover several LANs.
     public static bool ConfigureLanRules(string[] adapterNames, bool open)
     {
-        string script = "Get-NetFirewallRule -Name 'WifiShare-Smb','WifiShare-DiscoveryUdp','WifiShare-DiscoveryTcp','WifiShare-Ping' -ErrorAction SilentlyContinue | Remove-NetFirewallRule; ";
+        string script = "Get-NetFirewallRule -Name 'Anything-Smb','Anything-DiscoveryUdp','Anything-DiscoveryTcp','Anything-Ping' -ErrorAction SilentlyContinue | Remove-NetFirewallRule; ";
         if (open)
         {
             string aliases = string.Join(",", adapterNames.Select(Sys.PwshQuote));
             string scope = $" -InterfaceAlias {aliases} -Profile Any -Direction Inbound -Action Allow -RemoteAddress LocalSubnet ";
-            script += "New-NetFirewallRule -Name 'WifiShare-Smb' -DisplayName 'WifiShare LAN files' -Protocol TCP -LocalPort 445" + scope + "| Out-Null; " +
-                      "New-NetFirewallRule -Name 'WifiShare-DiscoveryUdp' -DisplayName 'WifiShare LAN discovery UDP' -Protocol UDP -LocalPort 3702" + scope + "| Out-Null; " +
-                      "New-NetFirewallRule -Name 'WifiShare-DiscoveryTcp' -DisplayName 'WifiShare LAN discovery TCP' -Protocol TCP -LocalPort 5357,5358" + scope + "| Out-Null; " +
-                      "New-NetFirewallRule -Name 'WifiShare-Ping' -DisplayName 'WifiShare LAN ping' -Protocol ICMPv4 -IcmpType 8" + scope + "| Out-Null";
+            script += "New-NetFirewallRule -Name 'Anything-Smb' -DisplayName 'Anything LAN files' -Protocol TCP -LocalPort 445" + scope + "| Out-Null; " +
+                      "New-NetFirewallRule -Name 'Anything-DiscoveryUdp' -DisplayName 'Anything LAN discovery UDP' -Protocol UDP -LocalPort 3702" + scope + "| Out-Null; " +
+                      "New-NetFirewallRule -Name 'Anything-DiscoveryTcp' -DisplayName 'Anything LAN discovery TCP' -Protocol TCP -LocalPort 5357,5358" + scope + "| Out-Null; " +
+                      "New-NetFirewallRule -Name 'Anything-Ping' -DisplayName 'Anything LAN ping' -Protocol ICMPv4 -IcmpType 8" + scope + "| Out-Null";
         }
         var result = Sys.PowerShell(script);
         if (!result.Success) Log.Warn("LAN firewall rules: " + result.StdErr);
@@ -163,15 +163,15 @@ internal static class Sharing
 
     public static void OpenHttpPort(int port, bool open, string[]? adapterNames = null)
     {
-        string rule = $"WifiShare HTTP {port}";
+        string rule = $"Anything HTTP {port}";
         if (open)
         {
             if (adapterNames is { Length: > 0 })
             {
                 string aliases = string.Join(",", adapterNames.Select(Sys.PwshQuote));
                 var scoped = Sys.PowerShell(
-                    $"Get-NetFirewallRule -Name 'WifiShare-Http-{port}' -ErrorAction SilentlyContinue | Remove-NetFirewallRule; " +
-                    $"New-NetFirewallRule -Name 'WifiShare-Http-{port}' -DisplayName {Sys.PwshQuote(rule)} " +
+                    $"Get-NetFirewallRule -Name 'Anything-Http-{port}' -ErrorAction SilentlyContinue | Remove-NetFirewallRule; " +
+                    $"New-NetFirewallRule -Name 'Anything-Http-{port}' -DisplayName {Sys.PwshQuote(rule)} " +
                     $"-Direction Inbound -Action Allow -Protocol TCP -LocalPort {port} -InterfaceAlias {aliases} -RemoteAddress LocalSubnet -Profile Any | Out-Null");
                 if (!scoped.Success) Log.Warn("HTTP firewall: " + scoped.StdErr);
                 return;
@@ -182,7 +182,7 @@ internal static class Sharing
         }
         else
         {
-            Sys.PowerShell($"Get-NetFirewallRule -Name 'WifiShare-Http-{port}' -ErrorAction SilentlyContinue | Remove-NetFirewallRule");
+            Sys.PowerShell($"Get-NetFirewallRule -Name 'Anything-Http-{port}' -ErrorAction SilentlyContinue | Remove-NetFirewallRule");
             Sys.Netsh($"advfirewall firewall delete rule name=\"{rule}\" protocol=TCP localport={port}");
         }
     }
@@ -193,17 +193,17 @@ internal static class Sharing
     // locked-down firewall cannot break renewals.
     public static bool OpenDhcpPort(bool open, string? adapterName = null)
     {
-        string script = "Get-NetFirewallRule -Name 'WifiShare-Dhcp-In','WifiShare-Dhcp-Out' -ErrorAction SilentlyContinue | Remove-NetFirewallRule; ";
+        string script = "Get-NetFirewallRule -Name 'Anything-Dhcp-In','Anything-Dhcp-Out' -ErrorAction SilentlyContinue | Remove-NetFirewallRule; ";
         if (open)
         {
             if (string.IsNullOrWhiteSpace(adapterName)) return false;
             string nic = Sys.PwshQuote(adapterName);
-            script += $"New-NetFirewallRule -Name 'WifiShare-Dhcp-In' -DisplayName 'WifiShare DHCP receive' -Direction Inbound -Action Allow -Protocol UDP -LocalPort 67 -RemotePort 68 -InterfaceAlias {nic} -Profile Any | Out-Null; " +
-                      $"New-NetFirewallRule -Name 'WifiShare-Dhcp-Out' -DisplayName 'WifiShare DHCP reply' -Direction Outbound -Action Allow -Protocol UDP -LocalPort 67 -RemotePort 68 -InterfaceAlias {nic} -Profile Any | Out-Null";
+            script += $"New-NetFirewallRule -Name 'Anything-Dhcp-In' -DisplayName 'Anything DHCP receive' -Direction Inbound -Action Allow -Protocol UDP -LocalPort 67 -RemotePort 68 -InterfaceAlias {nic} -Profile Any | Out-Null; " +
+                      $"New-NetFirewallRule -Name 'Anything-Dhcp-Out' -DisplayName 'Anything DHCP reply' -Direction Outbound -Action Allow -Protocol UDP -LocalPort 67 -RemotePort 68 -InterfaceAlias {nic} -Profile Any | Out-Null";
         }
         var r = Sys.PowerShell(script);
         if (!r.Success) Log.Error("DHCP firewall: " + r.StdErr);
-        if (!open) Sys.Netsh("advfirewall firewall delete rule name=\"WifiShare DHCP\" protocol=UDP localport=67"); // legacy rule
+        if (!open) Sys.Netsh("advfirewall firewall delete rule name=\"WifiShare DHCP\" protocol=UDP localport=67"); // legacy rule from pre-rename builds
         return r.Success;
     }
 }

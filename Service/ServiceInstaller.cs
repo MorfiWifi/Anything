@@ -9,7 +9,7 @@ using System.IO;
 // ============================================================================
 internal static class ServiceInstaller
 {
-    public const string ServiceName = "WifiShare";
+    public const string ServiceName = "Anything";
 
     public static bool Exists()
     {
@@ -28,7 +28,7 @@ internal static class ServiceInstaller
         if (string.IsNullOrEmpty(exe) ||
             Path.GetFileName(exe).Equals("dotnet.exe", StringComparison.OrdinalIgnoreCase))
         {
-            Log.Error("Install from the published WifiShare.exe, not through 'dotnet run'/'dotnet <dll>'.");
+            Log.Error("Install from the published Anything.exe, not through 'dotnet run'/'dotnet <dll>'.");
             return false;
         }
         if (Exists())
@@ -39,7 +39,7 @@ internal static class ServiceInstaller
         AppData.EnsureDir();
         // binPath value must keep literal quotes around the exe for the SCM.
         var create = Sys.Run("sc",
-            $"create {ServiceName} binPath= \"\\\"{exe}\\\" --service\" start= auto obj= LocalSystem DisplayName= \"WifiShare Folder Sharing\"");
+            $"create {ServiceName} binPath= \"\\\"{exe}\\\" --service\" start= auto obj= LocalSystem DisplayName= \"Anything Folder Sharing\"");
         if (!create.Success)
         {
             Log.Error("sc create failed: " + create.StdOut + " " + create.StdErr);
@@ -55,7 +55,7 @@ internal static class ServiceInstaller
             Log.Error("Service installed but did not start: " + start.StdOut + " " + start.StdErr);
             return false;
         }
-        Log.Ok("Service started. Control it from any terminal: WifiShare status | share | stop.");
+        Log.Ok("Service started. Control it from any terminal: Anything status | share | stop.");
         return true;
     }
 

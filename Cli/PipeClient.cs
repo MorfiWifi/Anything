@@ -33,7 +33,7 @@ internal static class PipeClient
                 {
                     Ok = false,
                     Message = $"The service did not answer within {timeoutMs / 1000}s. " +
-                              "It may still be working — check 'WifiShare status' and the service log.",
+                              "It may still be working — check 'Anything status' and the service log.",
                 };
             string? line = read.Result;
             if (line is null)

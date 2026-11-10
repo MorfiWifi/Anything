@@ -27,21 +27,27 @@ internal static class LanNat
             throw new InvalidOperationException(operation + ": " + result.StdErr + " " + result.StdOut);
     }
 
-    public static void Preflight(AdapterSnapshot wifi, AdapterSnapshot ethernet, bool dhcp)
+    // wifi == null: isolated subnet (no uplink). No NAT is created, so WinNAT
+    // availability, existing NATs and the default route are irrelevant; ICS
+    // and UDP 67 conflicts still matter because they break our DHCP server.
+    public static void Preflight(AdapterSnapshot? wifi, AdapterSnapshot ethernet, bool dhcp)
     {
         var sharing = Ics.GetStatus(out string? error);
         if (error is not null) throw new InvalidOperationException("Cannot inspect ICS: " + error);
         if (sharing.Any(e => e.Enabled))
             throw new InvalidOperationException("ICS is already enabled. Stop the existing sharing session or disable " +
                 "the Wi-Fi Sharing checkbox / Mobile hotspot first. ICS and this custom-subnet NAT must not run together.");
-        Require(Sys.PowerShell(
-            "Get-Command New-NetNat -ErrorAction Stop | Out-Null; " +
-            "if (@(Get-NetNat -ErrorAction Stop).Count -ne 0) { throw 'An existing Windows NAT is configured. " +
-            "WifiShare will not replace another app or VM network.' }; " +
-            "$route = Find-NetRoute -RemoteIPAddress '1.1.1.1' | Select-Object -First 1; " +
-            $"$wifi = Get-NetAdapter -Name {Sys.PwshQuote(wifi.Name)}; " +
-            "if ($route.InterfaceIndex -ne $wifi.ifIndex) { throw 'The default internet route does not use the selected Wi-Fi. Check VPN/default routes first.' }"),
-            "Custom subnet routing is unavailable (requires Windows WinNAT)");
+        if (wifi is not null)
+        {
+            Require(Sys.PowerShell(
+                "Get-Command New-NetNat -ErrorAction Stop | Out-Null; " +
+                "if (@(Get-NetNat -ErrorAction Stop).Count -ne 0) { throw 'An existing Windows NAT is configured. " +
+                "Anything will not replace another app or VM network.' }; " +
+                "$route = Find-NetRoute -RemoteIPAddress '1.1.1.1' | Select-Object -First 1; " +
+                $"$wifi = Get-NetAdapter -Name {Sys.PwshQuote(wifi.Name)}; " +
+                "if ($route.InterfaceIndex -ne $wifi.ifIndex) { throw 'The default internet route does not use the selected Wi-Fi. Check VPN/default routes first.' }"),
+                "Custom subnet routing is unavailable (requires Windows WinNAT)");
+        }
         if (dhcp)
         {
             using var probe = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);

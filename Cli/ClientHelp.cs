@@ -34,7 +34,8 @@ internal static class ClientHelp
 
     public static void Print(string hostIp, string shareName, int httpPort, bool httpOn,
                              string dns1, string dns2,
-                             bool dhcpOn, string poolStart, string poolEnd, string domain)
+                             bool dhcpOn, string poolStart, string poolEnd, string domain,
+                             bool isolated = false)
     {
         string clientIp = poolStart;
         Ui.Section("CLIENT SETUP (do this on the client PC)");
@@ -69,8 +70,17 @@ internal static class ClientHelp
         Console.WriteLine("4. On the client, run ipconfig /all and check the address, gateway and DNS above.");
         Console.WriteLine("   For DHCP, set IPv4 AND DNS to automatic, then run ipconfig /renew on the client.");
         Console.WriteLine("   A 169.254.x.x address means the client did not obtain a DHCP lease.");
-        Console.WriteLine($"5. Test: ping {hostIp}, then ping 1.1.1.1, then nslookup example.com.");
-        Console.WriteLine("   ICMP can be blocked; also try the HTTP link and a website in a browser.");
+        if (isolated)
+        {
+            Console.WriteLine($"5. Test: ping {hostIp}, then open the share or HTTP link above.");
+            Console.WriteLine("   ISOLATED subnet (no uplink): there is no internet beyond this machine;");
+            Console.WriteLine("   the gateway/DNS entries serve the local link only. File access is the goal.");
+        }
+        else
+        {
+            Console.WriteLine($"5. Test: ping {hostIp}, then ping 1.1.1.1, then nslookup example.com.");
+            Console.WriteLine("   ICMP can be blocked; also try the HTTP link and a website in a browser.");
+        }
         Console.WriteLine("   File Explorer Network discovery is separate: use the direct share address above.");
         Console.WriteLine("Keep this app open while DHCP or HTTP service is needed.");
     }

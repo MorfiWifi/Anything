@@ -4,9 +4,9 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>WifiShare.Tests</AssemblyName>
+    <AssemblyName>Anything.Tests</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../WifiShare.csproj" />
+    <ProjectReference Include="../Anything.csproj" />
   </ItemGroup>
 </Project>

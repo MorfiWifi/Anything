@@ -140,8 +140,8 @@ internal sealed class HttpFileServer : IDisposable
     private string ListingPage(string rel, string dir)
     {
         var sb = new StringBuilder();
-        sb.Append("<!DOCTYPE html><html><head><meta charset='utf-8'><title>WifiShare</title></head><body>");
-        sb.Append("<h2>WifiShare file drop</h2><ul>");
+        sb.Append("<!DOCTYPE html><html><head><meta charset='utf-8'><title>Anything</title></head><body>");
+        sb.Append("<h2>Anything file drop</h2><ul>");
         if (!string.IsNullOrEmpty(rel)) sb.Append("<li><a href='../'>.. (up)</a></li>");
         foreach (var d in Directory.GetDirectories(dir).OrderBy(x => x))
         {

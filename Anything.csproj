@@ -15,22 +15,22 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <AssemblyName>WifiShare</AssemblyName>
-    <RootNamespace>WifiShare</RootNamespace>
-    <!-- Base version for autoversioning. Local builds use this as-is (1.2.0).
+    <AssemblyName>Anything</AssemblyName>
+    <RootNamespace>Anything</RootNamespace>
+    <!-- Base version for autoversioning. Local builds use this as-is (1.3.0).
          CI appends the GitHub run number on the `release` branch:
            dotnet publish /p:Version=$(VersionPrefix).<run_number>
-         so every release build gets a unique version (e.g. 1.2.0.78) and the
+         so every release build gets a unique version (e.g. 1.3.0.78) and the
          GitHub Release is tagged v<that version>. Bump VersionPrefix here to
          start a new series. No NuGet versioning packages required. -->
-    <VersionPrefix>1.2.0</VersionPrefix>
+    <VersionPrefix>1.3.0</VersionPrefix>
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
-    <Description>Folder sharing by IP address as a background Windows service, with optional dedicated-subnet NAT/DHCP for a cabled client.</Description>
+    <Description>Anything — share any folder by IP address as a background Windows service, with optional dedicated-subnet NAT/DHCP for a cabled client.</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Remove="tests/**/*.cs" />
-    <InternalsVisibleTo Include="WifiShare.Tests" />
+    <InternalsVisibleTo Include="Anything.Tests" />
   </ItemGroup>
 
 </Project>

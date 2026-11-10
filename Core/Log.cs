@@ -23,7 +23,7 @@ internal static class Log
 {
     private static readonly object _lock = new();
     public static string FilePath { get; set; } =
-        System.IO.Path.Combine(AppContext.BaseDirectory, "WifiShare.log");
+        System.IO.Path.Combine(AppContext.BaseDirectory, "Anything.log");
     public static bool ConsoleEnabled { get; set; } = true;
 
     private static void Write(string level, string msg, ConsoleColor color)
